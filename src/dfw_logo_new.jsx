@@ -5,7 +5,7 @@ import { SplatMesh, dyno } from '@sparkjsdev/spark'
 import { useControls } from 'leva'
 import * as THREE from 'three'
 
-function Logo_new({ url, animating = true, ...props }) {
+function Dfw_logo_new({ url, animating = true, ...props }) {
     const [mesh, setMesh] = useState(null)
     const { scene } = useThree()
     const ref = useRef()
@@ -17,18 +17,22 @@ function Logo_new({ url, animating = true, ...props }) {
     const controls = useControls('Disintegrate Effect', {
         intensity: { value: 0.8, min: 0, max: 2, step: 0.01 },
         minScale: { value: 0.3, min: 0, max: 1, step: 0.01, label: 'Min Scale' },
-        speed: { value: 1.0, min: 0.1, max: 3, step: 0.1 }
+        speed: { value: 1.0, min: 0.1, max: 3, step: 0.1 },
+        rotationX: { value: -86, min: -180, max: 180, step: 1, label: 'Rotation X' },
+        rotationY: { value: 0, min: -180, max: 180, step: 1, label: 'Rotation Y' },
+        rotationZ: { value: -95, min: -180, max: 180, step: 1, label: 'Rotation Z' }
     })
 
     useEffect(() => {
         const splatMesh = new SplatMesh({ url })
-        splatMesh.scale.set(3, 2, 2)
-        splatMesh.renderOrder = -1
+        
+        splatMesh.scale.set(2, 2, 2)
+        // splatMesh.renderOrder = -1
         
 
-        const rotateX = THREE.MathUtils.degToRad(90)
-        const rotateY = THREE.MathUtils.degToRad(0)
-        const rotateZ = THREE.MathUtils.degToRad(-170)
+        const rotateX = THREE.MathUtils.degToRad(controls.rotationX)
+        const rotateY = THREE.MathUtils.degToRad(controls.rotationY)
+        const rotateZ = THREE.MathUtils.degToRad(controls.rotationZ)
         splatMesh.rotation.set(rotateX, rotateY, rotateZ)
 
         splatMesh.objectModifier = dyno.dynoBlock(
@@ -101,6 +105,15 @@ function Logo_new({ url, animating = true, ...props }) {
         speed.current.value = controls.speed
     }, [controls.intensity, controls.minScale, controls.speed])
 
+    useEffect(() => {
+        if (mesh) {
+            const rotateX = THREE.MathUtils.degToRad(controls.rotationX)
+            const rotateY = THREE.MathUtils.degToRad(controls.rotationY)
+            const rotateZ = THREE.MathUtils.degToRad(controls.rotationZ)
+            mesh.rotation.set(rotateX, rotateY, rotateZ)
+        }
+    }, [mesh, controls.rotationX, controls.rotationY, controls.rotationZ])
+
     useFrame((state, delta) => {
         if (mesh && ref.current) {
             const pos = new THREE.Vector3()
@@ -120,4 +133,4 @@ function Logo_new({ url, animating = true, ...props }) {
     return <Container ref={ref} width={50} height={80} {...props} />
 }
 
-export default Logo_new
+export default Dfw_logo_new
