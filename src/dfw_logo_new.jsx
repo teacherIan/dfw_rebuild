@@ -4,8 +4,10 @@ import { Container } from '@react-three/uikit'
 import { SplatMesh, dyno } from '@sparkjsdev/spark'
 import { useControls } from 'leva'
 import * as THREE from 'three'
+import { useScroll } from '@react-three/drei'
 
-function Dfw_logo_new({ url, scrollProgress = 0, ...props }) {
+function Dfw_logo_new({ url, ...props }) {
+    const scroll = useScroll()
     const [mesh, setMesh] = useState(null)
     const { scene } = useThree()
     const ref = useRef()
@@ -15,15 +17,15 @@ function Dfw_logo_new({ url, scrollProgress = 0, ...props }) {
     const speed = useRef(dyno.dynoFloat(1.0))
 
     const controls = useControls('Swirl Effect', {
-        intensity: { value: 1.2, min: 0, max: 3, step: 0.01, label: 'Explosion Intensity' },
-        minScale: { value: 0.5, min: 0, max: 2, step: 0.01, label: 'Particle Scale' },
+        intensity: { value: 3, min: 0, max: 5, step: 0.01, label: 'Explosion Intensity' },
+        minScale: { value: 1, min: 0, max: 2, step: 0.01, label: 'Particle Scale' },
         speed: { value: 1.5, min: 0.1, max: 5, step: 0.1, label: 'Rotation Speed' },
         rotationX: { value: -86, min: -180, max: 180, step: 1, label: 'Rotation X' },
         rotationY: { value: 0, min: -180, max: 180, step: 1, label: 'Rotation Y' },
         rotationZ: { value: -95, min: -180, max: 180, step: 1, label: 'Rotation Z' },
-        endX: { value: -0.6, min: -2, max: 2, step: 0.01, label: 'End Position X' },
-        endY: { value: 0.44, min: -2, max: 2, step: 0.01, label: 'End Position Y' },
-        curveAmount: { value: 1, min: 0, max: 1, step: 0.01, label: 'Curve Amount' }
+        targetScreenX: { value: -0.7, min: -1, max: 1, step: 0.01, label: 'Screen Position X' },
+        targetScreenY: { value: 0.88, min: -1, max: 1, step: 0.01, label: 'Screen Position Y' },
+        curveAmount: { value: 2, min: 0, max: 2, step: 0.01, label: 'Curve Amount' }
     })
 
     useEffect(() => {
@@ -69,40 +71,37 @@ function Dfw_logo_new({ url, scrollProgress = 0, ...props }) {
               }
 
               vec4 swirlDisintegrate(vec3 pos, float t, float intensity, float speed) {
-                // Create a smooth 0 -> 1 -> 0 cycle
-                // Use smoothstep for better control at start and end
-                float rawCycle = t / 3.14159; // normalize to 0-1
-                float cycle;
-                
-                if (rawCycle < 0.5) {
-                  // First half: 0 -> 1
-                  cycle = smoothstep(0.0, 0.5, rawCycle) * 2.0;
-                } else {
-                  // Second half: 1 -> 0
-                  cycle = smoothstep(1.0, 0.5, rawCycle) * 2.0;
+                // If intensity is 0, skip all effects
+                if (intensity < 0.001) {
+                  return vec4(pos, 1.0);
                 }
                 
-                // Ensure we're truly at 0 at the extremes
-                cycle = clamp(cycle, 0.0, 1.0);
+                // Create smooth 0 -> 1 -> 0 cycle using sin wave
+                // This gives a perfectly smooth transition throughout
+                float cycle = sin(t);
+                cycle = max(0.0, cycle); // Clamp to positive values only
                 
-                // Random offset for each particle
+                // Random offset for each particle based on position
                 vec3 randomDir = (hash(pos) * 2.0 - 1.0);
                 
-                // Spiral outward effect
-                float angle = atan(pos.y, pos.x) + cycle * 6.28318 * speed; // Full rotation
+                // Add some variation based on particle position for more organic look
+                float particleOffset = length(pos) * 0.1;
+                float adjustedCycle = cycle * (1.0 + sin(particleOffset) * 0.3);
+                adjustedCycle = clamp(adjustedCycle, 0.0, 1.0);
                 
-                // Explode outward with spiral
-                vec3 displaced = pos + randomDir * intensity * cycle;
+                // Explode outward with randomness
+                vec3 displaced = pos + randomDir * intensity * adjustedCycle;
                 
-                // Add spiral rotation
-                mat3 rot = rotationMatrix(normalize(vec3(0.0, 1.0, 0.3)), angle * cycle);
-                displaced = rot * displaced;
+                // Spiral rotation during explosion
+                // float angle = atan(pos.y, pos.x) + adjustedCycle * 6.28318 * speed;
+                // mat3 rot = rotationMatrix(normalize(vec3(0.0, 1.0, 0.3)), angle * adjustedCycle);
+                // displaced = rot * displaced;
                 
-                // Mix between displaced and original - at cycle=0, should be 100% original
-                vec3 finalPos = mix(pos, displaced, cycle);
+                // Smooth mix between original and displaced position
+                vec3 finalPos = mix(pos, displaced, adjustedCycle);
                 
-                // Scale effect - particles shrink at peak displacement
-                float scaleFactor = 1.0 - (cycle * 0.7);
+                // Keep scale constant
+                float scaleFactor = 1.0;
                 
                 return vec4(finalPos, scaleFactor);
               }
@@ -167,17 +166,43 @@ function Dfw_logo_new({ url, scrollProgress = 0, ...props }) {
                     : 1 - Math.pow(-2 * t + 2, 3) / 2
             }
             
+            // Get scroll offset from Drei's ScrollControls (0-1 range)
+            const scrollProgress = scroll.offset
+            
             const easedProgress = easeInOutCubic(scrollProgress)
             
             // Map scroll to 0 -> PI for one smooth sin wave cycle (0->1->0)
             // This creates: solid -> exploded/swirled -> solid
             animateT.current.value = scrollProgress * Math.PI
             
-            // Curved path animation - creates a looping arc
+            // Calculate responsive world-space position based on viewport
+            const camera = state.camera
+            const aspect = state.viewport.aspect
+            const distance = camera.position.z
+            
+            // Calculate the visible height and width at the mesh's Z position
+            const vFOV = (camera.fov * Math.PI) / 180
+            const visibleHeight = 2 * Math.tan(vFOV / 2) * distance
+            const visibleWidth = visibleHeight * aspect
+            
+            // Adjust for different screen sizes
+            // On mobile (portrait), aspect < 1, so we need to scale X positions less aggressively
+            // On desktop (landscape), aspect > 1, positions work as expected
+            const isMobile = aspect < 1
+            const adjustedScreenX = isMobile 
+                ? controls.targetScreenX * Math.min(aspect * 1.5, 1) // Scale down X on mobile
+                : controls.targetScreenX
+            
+            // Use Leva-controlled screen position (-1 to 1 range)
+            // -1, -1 = bottom-left corner
+            //  0,  0 = center
+            //  1,  1 = top-right corner
+            
+            // Convert screen percentage to world coordinates
             const startX = 0
             const startY = 0
-            const endX = controls.endX
-            const endY = controls.endY
+            const endX = (visibleWidth / 2) * adjustedScreenX
+            const endY = (visibleHeight / 2) * controls.targetScreenY
             
             // Add curve using a sine wave for the loop effect
             const curveOffset = Math.sin(scrollProgress * Math.PI) * controls.curveAmount

@@ -1,13 +1,13 @@
-import { useState, useRef, useEffect } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
-import { OrbitControls, Text } from '@react-three/drei'
+import { useState } from 'react'
+import { Canvas, useThree, useFrame } from '@react-three/fiber'
+import { ScrollControls, Scroll, useScroll } from '@react-three/drei'
 import { useControls } from 'leva'
 import Logo_new from './Logo_new.jsx'
 import Gallery from './Gallery.jsx'
 import Button3D from './Button3D.jsx'
 import Dfw_logo_new from './dfw_logo_new.jsx'
 
-function CameraController({ scrollProgress }) {
+function CameraController() {
   const { camera } = useThree()
   
   const cameraControls = useControls('Camera', {
@@ -34,36 +34,14 @@ function CameraController({ scrollProgress }) {
 }
 
 function App() {
-  const [scrollProgress, setScrollProgress] = useState(0)
   const [showGallery, setShowGallery] = useState(false)
-  const scrollContainerRef = useRef(null)
-
-  useEffect(() => {
-    const handleScroll = () => {
-      if (scrollContainerRef.current) {
-        const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current
-        const maxScroll = scrollHeight - clientHeight
-        const progress = maxScroll > 0 ? scrollTop / maxScroll : 0
-        setScrollProgress(progress)
-      }
-    }
-
-    const container = scrollContainerRef.current
-    if (container) {
-      container.addEventListener('scroll', handleScroll)
-      return () => container.removeEventListener('scroll', handleScroll)
-    }
-  }, [])
 
   if (showGallery) {
     return (
       <div style={{ width: '100vw', height: '100vh', overflow: 'auto', background: '#111' }}>
         <div style={{ padding: '20px', display: 'flex', justifyContent: 'center' }}>
           <button 
-            onClick={() => {
-              setShowGallery(false)
-              setAnimating(true)
-            }}
+            onClick={() => setShowGallery(false)}
             style={{
               padding: '10px 20px',
               fontSize: '16px',
@@ -82,92 +60,135 @@ function App() {
   }
 
   return (
-    <div 
-      ref={scrollContainerRef}
-      style={{ 
-        width: '100vw', 
-        height: '100vh', 
-        overflow: 'auto',
-        position: 'relative'
-      }}
-    >
-      {/* Fixed Canvas Background */}
-      <div style={{ 
-        position: 'fixed', 
-        top: 0, 
-        left: 0, 
-        width: '100%', 
-        height: '100%',
-        zIndex: 0
-      }}>
-        <Canvas camera={{ position: [-0.2, 0.6, 1.1], fov: 48 }}>
-          <CameraController scrollProgress={scrollProgress} />
-          <Dfw_logo_new 
-            url="/splats/dfw_logo_new.spz" 
-            scrollProgress={scrollProgress}
-          />
-          <OrbitControls enableRotate={false} enableZoom={false} enablePan={false} />
-        </Canvas>
-      </div>
+    <Canvas camera={{ position: [-0.2, 0.6, 1.1], fov: 48 }}>
+      <CameraController />
+      
+      {/* ScrollControls wraps everything - 3 pages for 3 sections */}
+      <ScrollControls pages={3} damping={0.2}>
+        <InteractiveLogo />
+        
+        {/* HTML content that scrolls */}
+        <Scroll html style={{ width: '100%' }}>
+          <div style={{ width: '100vw', pointerEvents: 'none', touchAction: 'pan-y' }}>
+            {/* Section 1 - Initial view */}
+            <IntroText />
 
-      {/* Scrollable Content */}
-      <div style={{ position: 'relative', zIndex: 1 }}>
-        {/* Section 1 - Initial view */}
-        <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-          <div style={{ 
-            pointerEvents: 'auto',
-            padding: '20px',
-            background: 'rgba(0, 0, 0, 0.5)',
-            borderRadius: '10px',
-            color: 'white',
-            textAlign: 'center'
-          }}>
-            <h1 style={{ margin: 0, fontSize: '3rem' }}>DFW</h1>
-            <p style={{ margin: '10px 0 0 0' }}>Scroll to explore</p>
+            {/* Section 2 - Animation phase */}
+            <div style={{ height: '100vh', pointerEvents: 'none' }}></div>
+
+            {/* Section 3 - Final view with button */}
+            <GalleryButton setShowGallery={setShowGallery} />
           </div>
-        </div>
 
-        {/* Section 2 - Animation phase */}
-        <div style={{ height: '100vh', pointerEvents: 'none' }}></div>
+          {/* Debug indicator */}
+          <ScrollDebug />
+        </Scroll>
+      </ScrollControls>
+    </Canvas>
+  )
+}
 
-        {/* Section 3 - Final view with button */}
-        <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-          <button
-            onClick={() => setShowGallery(true)}
-            style={{
-              pointerEvents: 'auto',
-              padding: '20px 40px',
-              fontSize: '24px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              background: 'rgba(0, 0, 0, 0.8)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '12px',
-              transition: 'all 0.3s ease',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
-            }}
-          >
-            Enter Gallery
-          </button>
-        </div>
-      </div>
-
-      {/* Debug indicator */}
-      <div style={{
-        position: 'fixed',
-        top: 10,
-        right: 10,
-        background: 'rgba(0, 0, 0, 0.7)',
+// Separate component for intro text with scroll-based fade
+function IntroText() {
+  const scroll = useScroll()
+  const [opacity, setOpacity] = useState(1)
+  
+  useFrame(() => {
+    // Fade out during first page (0 to 0.5)
+    const newOpacity = Math.max(0, 1 - scroll.offset * 2)
+    setOpacity(newOpacity)
+  })
+  
+  return (
+    <div style={{ 
+      height: '100vh', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      width: '100%',
+      opacity: opacity
+    }}>
+      <div style={{ 
+        pointerEvents: 'auto',
+        padding: '20px',
+        background: `rgba(0, 0, 0, ${0.5 * opacity})`,
+        borderRadius: '10px',
         color: 'white',
-        padding: '10px',
-        borderRadius: '5px',
-        fontFamily: 'monospace',
-        fontSize: '12px',
-        zIndex: 1000
+        textAlign: 'center'
       }}>
-        Scroll: {(scrollProgress * 100).toFixed(1)}%
+        <h1 style={{ margin: 0, fontSize: '3rem' }}>DFW</h1>
+        <p style={{ margin: '10px 0 0 0' }}>Scroll to explore</p>
       </div>
+    </div>
+  )
+}
+
+// Gallery button with scroll-based fade in
+function GalleryButton({ setShowGallery }) {
+  const scroll = useScroll()
+  const [opacity, setOpacity] = useState(0)
+  
+  useFrame(() => {
+    // Fade in during last half (0.5 to 1.0)
+    const newOpacity = Math.max(0, Math.min(1, (scroll.offset - 0.5) * 2))
+    setOpacity(newOpacity)
+  })
+  
+  return (
+    <div style={{ 
+      height: '100vh', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      pointerEvents: opacity > 0.1 ? 'auto' : 'none', 
+      width: '100%',
+      opacity: opacity
+    }}>
+      <button
+        onClick={() => setShowGallery(true)}
+        style={{
+          pointerEvents: 'auto',
+          padding: '20px 40px',
+          fontSize: '24px',
+          fontWeight: '600',
+          cursor: 'pointer',
+          background: 'rgba(0, 0, 0, 0.8)',
+          color: 'white',
+          border: 'none',
+          borderRadius: '12px',
+          transition: 'all 0.3s ease',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
+        }}
+      >
+        Enter Gallery
+      </button>
+    </div>
+  )
+}
+
+// Logo component that responds to scroll
+function InteractiveLogo() {
+  return <Dfw_logo_new url="/splats/dfw_logo_new.spz" />
+}
+
+// Debug component
+function ScrollDebug() {
+  const scroll = useScroll()
+  
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 10,
+      right: 10,
+      background: 'rgba(0, 0, 0, 0.7)',
+      color: 'white',
+      padding: '10px',
+      borderRadius: '5px',
+      fontFamily: 'monospace',
+      fontSize: '12px',
+      zIndex: 1000
+    }}>
+      Scroll: {(scroll.offset * 100).toFixed(1)}%
     </div>
   )
 }
