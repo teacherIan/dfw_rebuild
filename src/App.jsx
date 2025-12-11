@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Canvas, useThree, useFrame } from '@react-three/fiber'
+import { Canvas, useThree } from '@react-three/fiber'
 import { ScrollControls, Scroll, useScroll } from '@react-three/drei'
 import { useControls } from 'leva'
 import Logo_new from './Logo_new.jsx'
@@ -60,7 +60,7 @@ function App() {
   }
 
   return (
-    <Canvas camera={{ position: [-0.2, 0.6, 1.1], fov: 48 }}>
+    <Canvas camera={{ position: [-0.2, 0.6, 1.1], fov: 48 }} gl={{ antialias: false }}>
       <CameraController />
       
       {/* ScrollControls wraps everything - 3 pages for 3 sections */}
@@ -91,13 +91,6 @@ function App() {
 // Separate component for intro text with scroll-based fade
 function IntroText() {
   const scroll = useScroll()
-  const [opacity, setOpacity] = useState(1)
-  
-  useFrame(() => {
-    // Fade out during first page (0 to 0.5)
-    const newOpacity = Math.max(0, 1 - scroll.offset * 2)
-    setOpacity(newOpacity)
-  })
   
   return (
     <div style={{ 
@@ -105,13 +98,12 @@ function IntroText() {
       display: 'flex', 
       alignItems: 'center', 
       justifyContent: 'center', 
-      width: '100%',
-      opacity: opacity
+      width: '100%'
     }}>
       <div style={{ 
         pointerEvents: 'auto',
         padding: '20px',
-        background: `rgba(0, 0, 0, ${0.5 * opacity})`,
+        background: 'rgba(0, 0, 0, 0.5)',
         borderRadius: '10px',
         color: 'white',
         textAlign: 'center'
@@ -126,13 +118,6 @@ function IntroText() {
 // Gallery button with scroll-based fade in
 function GalleryButton({ setShowGallery }) {
   const scroll = useScroll()
-  const [opacity, setOpacity] = useState(0)
-  
-  useFrame(() => {
-    // Fade in during last half (0.5 to 1.0)
-    const newOpacity = Math.max(0, Math.min(1, (scroll.offset - 0.5) * 2))
-    setOpacity(newOpacity)
-  })
   
   return (
     <div style={{ 
@@ -140,9 +125,8 @@ function GalleryButton({ setShowGallery }) {
       display: 'flex', 
       alignItems: 'center', 
       justifyContent: 'center', 
-      pointerEvents: opacity > 0.1 ? 'auto' : 'none', 
-      width: '100%',
-      opacity: opacity
+      pointerEvents: 'auto', 
+      width: '100%'
     }}>
       <button
         onClick={() => setShowGallery(true)}
