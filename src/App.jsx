@@ -6,6 +6,7 @@ import Logo_new from './Logo_new.jsx'
 import Gallery from './Gallery.jsx'
 import Button3D from './Button3D.jsx'
 import Dfw_logo_new from './dfw_logo_new.jsx'
+import Chair3D from './Chair3D.jsx'
 
 function CameraController() {
   const { camera } = useThree()
@@ -152,7 +153,12 @@ function GalleryButton({ setShowGallery }) {
 
 // Logo component that responds to scroll
 function InteractiveLogo() {
-  return <Dfw_logo_new url="/splats/dfw_logo_new.spz" />
+  return (
+    <>
+      <Dfw_logo_new url="/splats/dfw_logo_new.spz" />
+      <Chair3D url="/splats/chair_no_bg.spz" />
+    </>
+  )
 }
 
 // Debug component
