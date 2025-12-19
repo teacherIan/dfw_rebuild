@@ -5,26 +5,24 @@ import { useControls } from 'leva'
 import * as THREE from 'three'
 import { useScroll } from '@react-three/drei'
 
-function Chair3D({ url, ...props }) {
+function CoffeeTable3D({ url, ...props }) {
     const scroll = useScroll()
     const [mesh, setMesh] = useState(null)
     const { scene } = useThree()
     const ref = useRef()
     const { viewport } = useThree()
     const animateT = useRef(dyno.dynoFloat(0))
-    const exitT = useRef(dyno.dynoFloat(0))
 
-    const controls = useControls('Chair', {
-        scale: { value: .5, min: 0.1, max: 5, step: 0.1, label: 'Chair Scale' },
+    const controls = useControls('CoffeeTable', {
+        scale: { value: .5, min: 0.1, max: 5, step: 0.1, label: 'Coffee Table Scale' },
         rotationX: { value: -107, min: -180, max: 180, step: 1, label: 'Rotation X' },
         rotationY: { value: 3, min: -180, max: 180, step: 1, label: 'Rotation Y' },
         rotationZ: { value: -35, min: -180, max: 180, step: 1, label: 'Rotation Z' },
-        targetScreenX: { value: 0.6, min: -2, max: 2, step: 0.01, label: 'Screen Position X' },
+        targetScreenX: { value: -0.6, min: -2, max: 2, step: 0.01, label: 'Screen Position X' },
         targetScreenY: { value: -0.2, min: -2, max: 2, step: 0.01, label: 'Screen Position Y' },
         targetScreenZ: { value: 0, min: -5, max: 5, step: 0.1, label: 'Screen Position Z' },
         // Animation timing - effect always goes 0% to 100% within this scroll range
-        effectStart: { value: 0.40, min: 0, max: 0.95, step: 0.01, label: 'Animation Start (scroll %)' },
-        effectEnd: { value: 0.75, min: 0, max: 1.0, step: 0.01, label: 'Animation End (scroll %)' },
+        effectStart: { value: 0.75, min: 0, max: 0.95, step: 0.01, label: 'Animation Start (scroll %)' },
         helixIntensity: { value: 50, min: 0, max: 100, step: 1, label: 'Helix Intensity' },
         scaleGrowth: { value: 1.0, min: 0, max: 1, step: 0.01, label: 'Scale Growth Amount' }
     })
@@ -48,7 +46,6 @@ function Chair3D({ url, ...props }) {
                     inTypes: {
                         gsplat: dyno.Gsplat,
                         t: "float",
-                        exitT: "float",
                         helixIntensity: "float",
                         scaleGrowth: "float"
                     },
@@ -65,28 +62,11 @@ function Chair3D({ url, ...props }) {
                     statements: ({ inputs, outputs }) => dyno.unindentLines(`
                         ${outputs.gsplat} = ${inputs.gsplat};
                         float t = ${inputs.t};
-                        float exitT = ${inputs.exitT};
                         vec3 localPos = ${inputs.gsplat}.center;
                         vec3 scales = ${inputs.gsplat}.scales;
                         
-                        // Handle exit animation (fade out and reverse helix)
-                        if (exitT > 0.0) {
-                            float exitProgress = exitT;
-                            float exitEased = smoothstep(0.0, 1.0, exitProgress);
-                            
-                            // Reverse helix effect
-                            float exitEffectT = exitEased * 8.0;
-                            float exitDecay = exp(-exitEffectT);
-                            float exitRotation = -(localPos.y * ${inputs.helixIntensity} - 20.0) * exitDecay * (1.0 - exitEased);
-                            localPos.xz *= rot(exitRotation);
-                            
-                            // Move outward and fade
-                            ${outputs.gsplat}.center = mix(${inputs.gsplat}.center, localPos * (1.0 + exitEased * 2.0), exitEased);
-                            ${outputs.gsplat}.scales = scales * (1.0 - exitEased);
-                            ${outputs.gsplat}.rgba = ${inputs.gsplat}.rgba * (1.0 - exitEased);
-                        }
-                        // Hide chair completely before animation starts (t < 0)
-                        else if (t < 0.0) {
+                        // Hide coffee table completely before animation starts (t < 0)
+                        if (t < 0.0) {
                             ${outputs.gsplat}.scales = vec3(0.0);
                             ${outputs.gsplat}.rgba = vec4(0.0);
                         }
@@ -135,7 +115,6 @@ function Chair3D({ url, ...props }) {
                 gsplat = d.apply({
                     gsplat,
                     t: animateT.current,
-                    exitT: exitT.current,
                     helixIntensity: dyno.dynoFloat(controls.helixIntensity),
                     scaleGrowth: dyno.dynoFloat(controls.scaleGrowth)
                 }).gsplat;
@@ -161,23 +140,16 @@ function Chair3D({ url, ...props }) {
 
         const offset = scroll.offset
         
-        // Calculate entrance animation progress
+        // Calculate animation progress from effectStart to end of page (1.0)
+        // This ensures the effect always completes at 100% by the end
         const effectProgress = THREE.MathUtils.clamp(
             (offset - controls.effectStart) / (1.0 - controls.effectStart),
-            -0.1,
+            -0.1,  // Allow slightly negative to ensure complete hiding before start
             1
         )
         
-        // Calculate exit animation progress
-        const exitDuration = 1.0 - controls.effectEnd
-        const exitProgress = THREE.MathUtils.clamp(
-            (offset - controls.effectEnd) / exitDuration,
-            0,
-            1
-        )
-        
+        // effectProgress now goes from 0 to 1, representing 0% to 100% of the animation
         animateT.current.value = effectProgress
-        exitT.current.value = exitProgress
 
         // Update scale dynamically
         ref.current.scale.set(controls.scale, controls.scale, controls.scale)
@@ -207,4 +179,4 @@ function Chair3D({ url, ...props }) {
     return null
 }
 
-export default Chair3D
+export default CoffeeTable3D
