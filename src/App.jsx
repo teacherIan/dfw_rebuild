@@ -10,6 +10,26 @@ import Dfw_logo_new from './dfw_logo_new.jsx'
 import Chair3D from './Chair3D.jsx'
 import CoffeeTable3D from './CoffeeTable3D.jsx'
 import SpriteText from './SpriteText.jsx'
+import { SCENE_ORDER, clamp01, useScrollOffsetValue, useScrollSnap } from './scrollSync.js'
+
+// Hook for centralized scene sync controls
+function useSceneSyncControls() {
+  return useControls('Scene Sync', {
+    // Logo/Intro timing
+    logoFadeStart: { value: 0.25, min: 0, max: 0.5, step: 0.01, label: 'Logo Fade Start' },
+    logoFadeEnd: { value: 0.45, min: 0.2, max: 0.6, step: 0.01, label: 'Logo Fade End' },
+    
+    // Chair timing  
+    chairEnterStart: { value: 0.30, min: 0.1, max: 0.5, step: 0.01, label: 'Chair Enter Start' },
+    chairEnterEnd: { value: 0.50, min: 0.3, max: 0.7, step: 0.01, label: 'Chair Enter End' },
+    chairExitStart: { value: 0.70, min: 0.5, max: 0.9, step: 0.01, label: 'Chair Exit Start' },
+    chairExitEnd: { value: 0.85, min: 0.6, max: 1.0, step: 0.01, label: 'Chair Exit End' },
+    
+    // Table timing
+    tableEnterStart: { value: 0.65, min: 0.5, max: 0.9, step: 0.01, label: 'Table Enter Start' },
+    tableEnterEnd: { value: 0.85, min: 0.6, max: 1.0, step: 0.01, label: 'Table Enter End' },
+  })
+}
 
 function CameraController() {
   const { camera } = useThree()
@@ -82,25 +102,12 @@ function App() {
       
       {/* ScrollControls wraps everything - 3 pages for 3 sections */}
       <ScrollControls pages={3} damping={0.25}>
+        <ScrollSceneManager />
         <InteractiveLogo spriteData={spriteData} />
         
         {/* HTML content that scrolls */}
         <Scroll html style={{ width: '100%' }}>
-          <div style={{ 
-            width: '100vw', 
-            pointerEvents: 'none',
-            scrollSnapType: 'y mandatory',
-            height: '100%'
-          }}>
-            {/* Section 1 (0-33%): DFW Logo Introduction */}
-            <IntroSection />
-
-            {/* Section 2 (33-66%): Chair Showcase */}
-            <ChairSection setShowGallery={setShowGallery} />
-
-            {/* Section 3 (66-100%): Table Showcase */}
-            <TableSection setShowGallery={setShowGallery} />
-          </div>
+          <HtmlSections setShowGallery={setShowGallery} />
 
           {/* Debug indicator */}
           <ScrollDebug />
@@ -110,21 +117,32 @@ function App() {
   )
 }
 
-// Section 1: DFW Logo Introduction (0-33% scroll)
-function IntroSection() {
-  const scroll = useScroll()
-  const [opacity, setOpacity] = useState(1)
-  
-  useEffect(() => {
-    if (!scroll) return
-    const unsubscribe = scroll.onChange(() => {
-      const offset = scroll.offset
-      // Fade out as we scroll away from first section (0-0.33)
-      const fadeOut = offset < 0.33 ? 1 - (offset / 0.33) * 0.7 : 0.3
-      setOpacity(fadeOut)
-    })
-    return () => unsubscribe?.()
-  }, [scroll])
+function ScrollSceneManager() {
+  useScrollSnap(SCENE_ORDER)
+  return null
+}
+
+function HtmlSections({ setShowGallery }) {
+  const offset = useScrollOffsetValue()
+
+  return (
+    <div style={{ 
+      width: '100vw', 
+      pointerEvents: 'none',
+      scrollSnapType: 'y mandatory',
+      height: '100%'
+    }}>
+      <IntroSection offset={offset} />
+      <ChairSection offset={offset} setShowGallery={setShowGallery} />
+      <TableSection offset={offset} setShowGallery={setShowGallery} />
+    </div>
+  )
+}
+
+// Section 1: DFW Logo Introduction
+function IntroSection({ offset }) {
+  // Fade out as we scroll past 30%
+  const opacity = clamp01(1 - (offset / 0.35))
   
   return (
     <div style={{ 
@@ -153,29 +171,14 @@ function IntroSection() {
   )
 }
 
-// Section 2: Chair Showcase (33-66% scroll)
-function ChairSection({ setShowGallery }) {
-  const scroll = useScroll()
-  const [opacity, setOpacity] = useState(0)
-  const [scale, setScale] = useState(0.8)
-  
-  useEffect(() => {
-    if (!scroll) return
-    const unsubscribe = scroll.onChange(() => {
-      const offset = scroll.offset
-      // Visible between 0.25 and 0.66
-      if (offset >= 0.25 && offset <= 0.66) {
-        const sectionProgress = (offset - 0.25) / 0.41
-        setOpacity(Math.min(1, sectionProgress * 3))
-        setScale(0.8 + sectionProgress * 0.2)
-      } else if (offset > 0.66) {
-        setOpacity(Math.max(0, 1 - (offset - 0.66) * 3))
-      } else {
-        setOpacity(0)
-      }
-    })
-    return () => unsubscribe?.()
-  }, [scroll])
+// Section 2: Chair Showcase
+function ChairSection({ offset, setShowGallery }) {
+  // Visible between 30% and 70% scroll
+  const enterProgress = clamp01((offset - 0.30) / 0.20)
+  const exitProgress = clamp01((offset - 0.70) / 0.15)
+  const presence = enterProgress * (1 - exitProgress)
+  const opacity = presence
+  const scale = 0.8 + presence * 0.2
   
   return (
     <div style={{ 
@@ -228,29 +231,13 @@ function ChairSection({ setShowGallery }) {
   )
 }
 
-// Section 3: Table Showcase (66-100% scroll)
-function TableSection({ setShowGallery }) {
-  const scroll = useScroll()
-  const [opacity, setOpacity] = useState(0)
-  const [scale, setScale] = useState(0.8)
-  
-  useEffect(() => {
-    if (!scroll) return
-    const unsubscribe = scroll.onChange(() => {
-      const offset = scroll.offset
-      // Visible from 0.6 onwards
-      if (offset >= 0.6) {
-        const sectionProgress = (offset - 0.6) / 0.4
-        setOpacity(Math.min(1, sectionProgress * 3))
-        setScale(0.8 + sectionProgress * 0.2)
-      } else {
-        setOpacity(0)
-      }
-    })
-    return () => unsubscribe?.()
-  }, [scroll])
-  }, [scroll])
-  
+// Section 3: Table Showcase
+function TableSection({ offset, setShowGallery }) {
+  // Visible from 65% scroll onwards (last scene, stays visible)
+  const enterProgress = clamp01((offset - 0.65) / 0.20)
+  const opacity = enterProgress
+  const scale = 0.8 + enterProgress * 0.2
+
   return (
     <div style={{ 
       height: '100vh', 
@@ -304,6 +291,28 @@ function TableSection({ setShowGallery }) {
 
 // Logo component that responds to scroll
 function InteractiveLogo({ spriteData }) {
+  const offset = useScrollOffsetValue()
+  const sync = useSceneSyncControls()
+  
+  // Calculate presence for each object based on scroll offset and sync controls
+  // Logo: visible at start, fades out during logoFadeStart -> logoFadeEnd
+  const logoFadeProgress = clamp01((offset - sync.logoFadeStart) / Math.max(0.01, sync.logoFadeEnd - sync.logoFadeStart))
+  const logoPresence = clamp01(1 - logoFadeProgress)
+  
+  // Chair: enters during chairEnterStart -> chairEnterEnd, exits during chairExitStart -> chairExitEnd
+  const chairEnterProgress = clamp01((offset - sync.chairEnterStart) / Math.max(0.01, sync.chairEnterEnd - sync.chairEnterStart))
+  const chairExitProgress = clamp01((offset - sync.chairExitStart) / Math.max(0.01, sync.chairExitEnd - sync.chairExitStart))
+  const chairPresence = clamp01(chairEnterProgress * (1 - chairExitProgress))
+  
+  // Table: enters during tableEnterStart -> tableEnterEnd, stays visible
+  const tableEnterProgress = clamp01((offset - sync.tableEnterStart) / Math.max(0.01, sync.tableEnterEnd - sync.tableEnterStart))
+  const tablePresence = tableEnterProgress
+  
+  // Progress values for animations (0-1 within each object's active window)
+  const introProgress = clamp01(offset / Math.max(0.01, sync.logoFadeEnd))
+  const chairProgress = chairEnterProgress
+  const tableProgress = tableEnterProgress
+
   const textControls = useControls('Sprite Text', {
     text: { value: 'DOUGS FOUND WOOD', label: 'Text' },
     posX: { value: 0, min: -5, max: 5, step: 0.1, label: 'Position X' },
@@ -320,51 +329,114 @@ function InteractiveLogo({ spriteData }) {
   
   return (
     <>
-      <Dfw_logo_new url="/splats/dfw_logo_new.spz" />
-      <Chair3D url="/splats/chair_no_bg.spz" />
-      <CoffeeTable3D url="/splats/coffee_table_fixed.spz" />
+      <Dfw_logo_new 
+        url="/splats/dfw_logo_new.spz" 
+        sceneProgress={introProgress} 
+        presence={logoPresence}
+      />
+      <Chair3D 
+        url="/splats/chair_no_bg.spz" 
+        sceneProgress={chairProgress} 
+        presence={chairPresence}
+        enterProgress={chairEnterProgress}
+        exitProgress={chairExitProgress}
+      />
+      <CoffeeTable3D 
+        url="/splats/coffee_table_fixed.spz" 
+        sceneProgress={tableProgress} 
+        presence={tablePresence}
+        enterProgress={tableEnterProgress}
+      />
       
-      {/* Debug cube and sprite text */}
+      {/* Sprite text for each scene */}
       {spriteData && (
         <>
-          <SpriteText 
-            text={textControls.text} 
-            position={[textControls.posX, textControls.posY, textControls.posZ]}
-            scale={textControls.scale} 
-            spacing={textControls.spacing}
-            rotation={[
-              THREE.MathUtils.degToRad(textControls.rotX),
-              THREE.MathUtils.degToRad(textControls.rotY),
-              THREE.MathUtils.degToRad(textControls.rotZ)
-            ]}
-            lookAtCamera={textControls.lookAtCamera}
-            renderOrder={textControls.renderOrder}
-            spriteData={spriteData}
-          />
+          {[
+            {
+              key: 'intro',
+              text: textControls.text,
+              position: [textControls.posX, textControls.posY, textControls.posZ],
+              scale: textControls.scale,
+              spacing: textControls.spacing,
+              rotation: [
+                THREE.MathUtils.degToRad(textControls.rotX),
+                THREE.MathUtils.degToRad(textControls.rotY),
+                THREE.MathUtils.degToRad(textControls.rotZ)
+              ],
+              lookAtCamera: textControls.lookAtCamera,
+              renderOrder: textControls.renderOrder,
+              progress: introProgress,
+              presence: logoPresence
+            },
+            {
+              key: 'chairs',
+              text: 'ADIRONDACK CHAIRS',
+              position: [0.05, -0.35, 0],
+              scale: 0.07,
+              spacing: 0.7,
+              rotation: [0, 0, 0],
+              lookAtCamera: true,
+              renderOrder: textControls.renderOrder + 1,
+              progress: chairProgress,
+              presence: chairPresence
+            },
+            {
+              key: 'tables',
+              text: 'COFFEE TABLES',
+              position: [-0.05, -0.35, 0],
+              scale: 0.07,
+              spacing: 0.7,
+              rotation: [0, 0, 0],
+              lookAtCamera: true,
+              renderOrder: textControls.renderOrder + 2,
+              progress: tableProgress,
+              presence: tablePresence
+            }
+          ].map((config) => (
+            <SpriteText
+              key={config.key}
+              text={config.text}
+              position={config.position}
+              scale={config.scale}
+              spacing={config.spacing}
+              rotation={config.rotation}
+              lookAtCamera={config.lookAtCamera}
+              renderOrder={config.renderOrder}
+              spriteData={spriteData}
+              progress={config.progress}
+              presence={config.presence}
+            />
+          ))}
         </>
       )}
     </>
   )
 }
 
-// Debug component
+// Debug component - shows scroll position and snap points
 function ScrollDebug() {
   const scroll = useScroll()
+  const offset = scroll.offset ?? 0
+  
+  // Snap points are at 0, 0.5, 1 (3 scenes)
+  const currentScene = offset < 0.33 ? 'Intro' : offset < 0.66 ? 'Chairs' : 'Tables'
   
   return (
     <div style={{
       position: 'fixed',
       top: 10,
       right: 10,
-      background: 'rgba(0, 0, 0, 0.7)',
+      background: 'rgba(0, 0, 0, 0.85)',
       color: 'white',
-      padding: '10px',
+      padding: '12px',
       borderRadius: '5px',
       fontFamily: 'monospace',
-      fontSize: '12px',
-      zIndex: 1000
+      fontSize: '11px',
+      zIndex: 1000,
+      lineHeight: '1.6'
     }}>
-      Scroll: {(scroll.offset * 100).toFixed(1)}%
+      <div>Scroll: {(offset * 100).toFixed(1)}%</div>
+      <div style={{ color: '#4f4', marginTop: '4px' }}>Scene: {currentScene}</div>
     </div>
   )
 }

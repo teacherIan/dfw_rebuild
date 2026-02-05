@@ -1,20 +1,26 @@
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
-import { Container } from '@react-three/uikit'
 import { SplatMesh, dyno } from '@sparkjsdev/spark'
 import { useControls } from 'leva'
 import * as THREE from 'three'
-import { useScroll } from '@react-three/drei'
 
-function Dfw_logo_new({ url, ...props }) {
-    const scroll = useScroll()
-    const [mesh, setMesh] = useState(null)
+const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
+
+function Dfw_logo_new({ url, sceneProgress = 0, presence = 1, ...props }) {
     const { scene } = useThree()
     const ref = useRef()
     const animateT = useRef(dyno.dynoFloat(0))
     const intensity = useRef(dyno.dynoFloat(0.8))
     const minScale = useRef(dyno.dynoFloat(0.3))
     const speed = useRef(dyno.dynoFloat(1.0))
+
+    const lastFrame = useRef({
+        animateT: Number.NaN,
+        posX: Number.NaN,
+        posY: Number.NaN,
+        scale: Number.NaN,
+        visible: null
+    })
 
     const controls = useControls('Swirl Effect', {
         intensity: { value: 3, min: 0, max: 5, step: 0.01, label: 'Explosion Intensity' },
@@ -32,7 +38,7 @@ function Dfw_logo_new({ url, ...props }) {
         const splatMesh = new SplatMesh({ url })
         
         splatMesh.scale.set(2, 2, 2)
-        // splatMesh.renderOrder = -1
+        
         
 
         const rotateX = THREE.MathUtils.degToRad(controls.rotationX)
@@ -131,12 +137,14 @@ function Dfw_logo_new({ url, ...props }) {
         )
 
         splatMesh.updateGenerator()
-        setMesh(splatMesh)
+        scene.add(splatMesh)
+        ref.current = splatMesh
 
         return () => {
+            scene.remove(splatMesh)
             splatMesh.dispose?.()
         }
-    }, [url])
+    }, [url, scene])
 
     useEffect(() => {
         intensity.current.value = controls.intensity
@@ -145,35 +153,35 @@ function Dfw_logo_new({ url, ...props }) {
     }, [controls.intensity, controls.minScale, controls.speed])
 
     useEffect(() => {
-        if (mesh) {
+        if (ref.current) {
             const rotateX = THREE.MathUtils.degToRad(controls.rotationX)
             const rotateY = THREE.MathUtils.degToRad(controls.rotationY)
             const rotateZ = THREE.MathUtils.degToRad(controls.rotationZ)
-            mesh.rotation.set(rotateX, rotateY, rotateZ)
+            ref.current.rotation.set(rotateX, rotateY, rotateZ)
         }
-    }, [mesh, controls.rotationX, controls.rotationY, controls.rotationZ])
+    }, [controls.rotationX, controls.rotationY, controls.rotationZ])
 
     useFrame((state, delta) => {
+        const mesh = ref.current
         if (mesh) {
-            if (!mesh.parent) {
-                scene.add(mesh)
+            const eps = 1e-4
+            const last = lastFrame.current
+            let dirty = false
+            
+            const localProgress = THREE.MathUtils.clamp(sceneProgress, 0, 1)
+            const clampedPresence = THREE.MathUtils.clamp(presence, 0, 1)
+            
+            // Use presence for visibility - when presence is 0, logo should be invisible
+            const displayProgress = localProgress
+            const easedProgress = easeInOutCubic(displayProgress)
+            
+            // Map intro scroll to 0 -> PI for one smooth sin wave cycle (0->1->0)
+            const nextAnimateT = localProgress * Math.PI
+            if (!Number.isFinite(last.animateT) || Math.abs(last.animateT - nextAnimateT) > eps) {
+                animateT.current.value = nextAnimateT
+                last.animateT = nextAnimateT
+                dirty = true
             }
-
-            // Easing function for smooth animation (ease-in-out cubic)
-            const easeInOutCubic = (t) => {
-                return t < 0.5 
-                    ? 4 * t * t * t 
-                    : 1 - Math.pow(-2 * t + 2, 3) / 2
-            }
-            
-            // Get scroll offset from Drei's ScrollControls (0-1 range)
-            const scrollProgress = scroll.offset
-            
-            const easedProgress = easeInOutCubic(scrollProgress)
-            
-            // Map scroll to 0 -> PI for one smooth sin wave cycle (0->1->0)
-            // This creates: solid -> exploded/swirled -> solid
-            animateT.current.value = scrollProgress * Math.PI
             
             // Calculate responsive world-space position based on viewport
             const camera = state.camera
@@ -186,17 +194,10 @@ function Dfw_logo_new({ url, ...props }) {
             const visibleWidth = visibleHeight * aspect
             
             // Adjust for different screen sizes
-            // On mobile (portrait), aspect < 1, so we need to scale X positions less aggressively
-            // On desktop (landscape), aspect > 1, positions work as expected
             const isMobile = aspect < 1
             const adjustedScreenX = isMobile 
-                ? controls.targetScreenX * Math.min(aspect * 1.5, 1) // Scale down X on mobile
+                ? controls.targetScreenX * Math.min(aspect * 1.5, 1)
                 : controls.targetScreenX
-            
-            // Use Leva-controlled screen position (-1 to 1 range)
-            // -1, -1 = bottom-left corner
-            //  0,  0 = center
-            //  1,  1 = top-right corner
             
             // Convert screen percentage to world coordinates
             const startX = 0
@@ -205,18 +206,45 @@ function Dfw_logo_new({ url, ...props }) {
             const endY = (visibleHeight / 2) * controls.targetScreenY
             
             // Add curve using a sine wave for the loop effect
-            const curveOffset = Math.sin(scrollProgress * Math.PI) * controls.curveAmount
+            const curveOffset = Math.sin(displayProgress * Math.PI) * controls.curveAmount
             
-            mesh.position.x = startX + (endX - startX) * easedProgress + curveOffset
-            mesh.position.y = startY + (endY - startY) * easedProgress
+            const nextX = startX + (endX - startX) * easedProgress + curveOffset
+            const nextY = startY + (endY - startY) * easedProgress
+            if (
+                !Number.isFinite(last.posX) ||
+                !Number.isFinite(last.posY) ||
+                Math.abs(last.posX - nextX) > eps ||
+                Math.abs(last.posY - nextY) > eps
+            ) {
+                mesh.position.x = nextX
+                mesh.position.y = nextY
+                last.posX = nextX
+                last.posY = nextY
+                dirty = true
+            }
             
-            // Scale down smoothly using eased progress
+            // Scale based on presence - fade out by scaling down
             const startScale = 2
             const endScale = 0.4
-            const currentScale = startScale + (endScale - startScale) * easedProgress
-            mesh.scale.set(currentScale, currentScale, currentScale)
+            const baseScale = startScale + (endScale - startScale) * easedProgress
+            const finalScale = baseScale * clampedPresence
+            if (!Number.isFinite(last.scale) || Math.abs(last.scale - finalScale) > eps) {
+                mesh.scale.set(finalScale, finalScale, finalScale)
+                last.scale = finalScale
+                dirty = true
+            }
             
-            mesh.updateVersion()
+            // Hide completely when presence is 0
+            const nextVisible = clampedPresence > 0.01
+            if (last.visible !== nextVisible) {
+                mesh.visible = nextVisible
+                last.visible = nextVisible
+                dirty = true
+            }
+            
+            if (dirty) {
+                mesh.updateVersion()
+            }
         }
     })
 

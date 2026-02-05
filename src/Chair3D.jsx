@@ -1,13 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import { SplatMesh, dyno } from '@sparkjsdev/spark'
 import { useControls } from 'leva'
 import * as THREE from 'three'
-import { useScroll } from '@react-three/drei'
 
-function Chair3D({ url, ...props }) {
-    const scroll = useScroll()
-    const [mesh, setMesh] = useState(null)
+function Chair3D({ url, sceneProgress = 0, presence = 1, enterProgress = 0, exitProgress = 0, ...props }) {
     const { scene } = useThree()
     const ref = useRef()
     const { viewport } = useThree()
@@ -23,11 +20,31 @@ function Chair3D({ url, ...props }) {
         targetScreenY: { value: -0.2, min: -2, max: 2, step: 0.01, label: 'Screen Position Y' },
         targetScreenZ: { value: 0, min: -5, max: 5, step: 0.1, label: 'Screen Position Z' },
         // Animation timing - effect always goes 0% to 100% within this scroll range
-        effectStart: { value: 0.40, min: 0, max: 0.95, step: 0.01, label: 'Animation Start (scroll %)' },
-        effectEnd: { value: 0.75, min: 0, max: 1.0, step: 0.01, label: 'Animation End (scroll %)' },
+        effectStart: { value: 0.15, min: 0, max: 0.95, step: 0.01, label: 'Animation Start (local %)' },
+        effectEnd: { value: 0.85, min: 0, max: 1.0, step: 0.01, label: 'Animation End (local %)' },
         helixIntensity: { value: 50, min: 0, max: 100, step: 1, label: 'Helix Intensity' },
         scaleGrowth: { value: 1.0, min: 0, max: 1, step: 0.01, label: 'Scale Growth Amount' }
     })
+
+    const helixIntensity = useRef(dyno.dynoFloat(controls.helixIntensity))
+    const scaleGrowth = useRef(dyno.dynoFloat(controls.scaleGrowth))
+    const lastFrame = useRef({
+        entranceT: Number.NaN,
+        exitT: Number.NaN,
+        posX: Number.NaN,
+        posY: Number.NaN,
+        posZ: Number.NaN,
+        rotX: Number.NaN,
+        rotY: Number.NaN,
+        rotZ: Number.NaN,
+        scale: Number.NaN,
+        visible: null
+    })
+
+    useEffect(() => {
+        helixIntensity.current.value = controls.helixIntensity
+        scaleGrowth.current.value = controls.scaleGrowth
+    }, [controls.helixIntensity, controls.scaleGrowth])
 
     useEffect(() => {
         const splatMesh = new SplatMesh({ url })
@@ -136,8 +153,8 @@ function Chair3D({ url, ...props }) {
                     gsplat,
                     t: animateT.current,
                     exitT: exitT.current,
-                    helixIntensity: dyno.dynoFloat(controls.helixIntensity),
-                    scaleGrowth: dyno.dynoFloat(controls.scaleGrowth)
+                    helixIntensity: helixIntensity.current,
+                    scaleGrowth: scaleGrowth.current
                 }).gsplat;
 
                 return { gsplat };
@@ -145,7 +162,6 @@ function Chair3D({ url, ...props }) {
         );
 
         scene.add(splatMesh)
-        setMesh(splatMesh)
         ref.current = splatMesh
 
         return () => {
@@ -156,50 +172,96 @@ function Chair3D({ url, ...props }) {
         }
     }, [url, scene])
 
-    useFrame((state) => {
+    useFrame(() => {
         if (!ref.current) return
 
-        const offset = scroll.offset
+        const eps = 1e-4
+        const last = lastFrame.current
+        let dirty = false
+
+        const clampedPresence = THREE.MathUtils.clamp(presence, 0, 1)
+        const clampedEnter = THREE.MathUtils.clamp(enterProgress, 0, 1)
+        const clampedExit = THREE.MathUtils.clamp(exitProgress, 0, 1)
         
-        // Calculate entrance animation progress
-        const effectProgress = THREE.MathUtils.clamp(
-            (offset - controls.effectStart) / (1.0 - controls.effectStart),
+        // Drive the shader animations with enter/exit progress
+        // Entrance animation: helix unroll effect (0 -> 1)
+        const entranceT = THREE.MathUtils.clamp(
+            (clampedEnter - controls.effectStart) / Math.max(0.0001, controls.effectEnd - controls.effectStart),
             -0.1,
             1
         )
+        if (!Number.isFinite(last.entranceT) || Math.abs(last.entranceT - entranceT) > eps) {
+            animateT.current.value = entranceT
+            last.entranceT = entranceT
+            dirty = true
+        }
         
-        // Calculate exit animation progress
-        const exitDuration = 1.0 - controls.effectEnd
-        const exitProgress = THREE.MathUtils.clamp(
-            (offset - controls.effectEnd) / exitDuration,
-            0,
-            1
-        )
-        
-        animateT.current.value = effectProgress
-        exitT.current.value = exitProgress
+        // Exit animation: reverse helix + explosion (0 -> 1)
+        if (!Number.isFinite(last.exitT) || Math.abs(last.exitT - clampedExit) > eps) {
+            exitT.current.value = clampedExit
+            last.exitT = clampedExit
+            dirty = true
+        }
 
-        // Update scale dynamically
-        ref.current.scale.set(controls.scale, controls.scale, controls.scale)
-
-        // Update rotation dynamically
         const rotateX = THREE.MathUtils.degToRad(controls.rotationX)
         const rotateY = THREE.MathUtils.degToRad(controls.rotationY)
         const rotateZ = THREE.MathUtils.degToRad(controls.rotationZ)
-        ref.current.rotation.set(rotateX, rotateY, rotateZ)
+        if (
+            !Number.isFinite(last.rotX) ||
+            !Number.isFinite(last.rotY) ||
+            !Number.isFinite(last.rotZ) ||
+            Math.abs(last.rotX - rotateX) > eps ||
+            Math.abs(last.rotY - rotateY) > eps ||
+            Math.abs(last.rotZ - rotateZ) > eps
+        ) {
+            ref.current.rotation.set(rotateX, rotateY, rotateZ)
+            last.rotX = rotateX
+            last.rotY = rotateY
+            last.rotZ = rotateZ
+            dirty = true
+        }
 
-        // Calculate target position in world space
         const targetX = controls.targetScreenX * viewport.width / 2
         const targetY = controls.targetScreenY * viewport.height / 2
         const targetZ = controls.targetScreenZ
-        
-        // Update position
-        ref.current.position.x = targetX
-        ref.current.position.y = targetY
-        ref.current.position.z = targetZ
+        const startPos = { x: 0, y: 0, z: 0.15 }
 
-        // Update the splat mesh to reflect shader changes
-        if (ref.current.updateVersion) {
+        // Position based on entrance progress (slides into place)
+        const positionT = THREE.MathUtils.smoothstep(clampedEnter, 0, 1)
+        const nextX = THREE.MathUtils.lerp(startPos.x, targetX, positionT)
+        const nextY = THREE.MathUtils.lerp(startPos.y, targetY, positionT)
+        const nextZ = THREE.MathUtils.lerp(startPos.z, targetZ, positionT)
+        if (
+            !Number.isFinite(last.posX) ||
+            !Number.isFinite(last.posY) ||
+            !Number.isFinite(last.posZ) ||
+            Math.abs(last.posX - nextX) > eps ||
+            Math.abs(last.posY - nextY) > eps ||
+            Math.abs(last.posZ - nextZ) > eps
+        ) {
+            ref.current.position.set(nextX, nextY, nextZ)
+            last.posX = nextX
+            last.posY = nextY
+            last.posZ = nextZ
+            dirty = true
+        }
+
+        // Scale controlled by shader, but base scale from controls
+        if (!Number.isFinite(last.scale) || Math.abs(last.scale - controls.scale) > eps) {
+            ref.current.scale.set(controls.scale, controls.scale, controls.scale)
+            last.scale = controls.scale
+            dirty = true
+        }
+        
+        // Hide completely when presence is 0
+        const nextVisible = clampedPresence > 0.01
+        if (last.visible !== nextVisible) {
+            ref.current.visible = nextVisible
+            last.visible = nextVisible
+            dirty = true
+        }
+
+        if (dirty && ref.current.updateVersion) {
             ref.current.updateVersion()
         }
     })
